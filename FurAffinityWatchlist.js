@@ -13,30 +13,60 @@
 // @match       https://www.furaffinity.net/commissions/*
 // @match       https://www.furaffinity.net/view/*
 // @require     http://code.jquery.com/jquery-latest.js
-// @grant       none
+// @grant       GM_getValue
+// @grant       GM_setValue
 // ==/UserScript==
 const WATCHER_HTML = ` <span class="font-small">[<i>Watches You</i>]</span>`;
+const MINUTES_BETWEEN_UPDATE = 5;
+const MILLISECONDS_PER_MINUTE = 1000 * 60;
 function lowerUsername(username) {
-    return username.trim().toLowerCase().replace(/(_|[^-a-zA-Z0-9])+/, "");
+    return username.trim().toLowerCase().replace(/(_|[^-a-zA-Z0-9])+/g, "");
 }
+async function shouldUpdate() {
+    const now = new Date;
+    const then = new Date(await GM_getValue('timeLastUpdated', now.getTime()));
+    return Math.floor((then.getTime() - now.getTime()) / MILLISECONDS_PER_MINUTE) > MINUTES_BETWEEN_UPDATE;
+}
+/**
+ * @return The currently logged in user's username or null
+ */
 function getUsername() {
     let node = $("a#my-username.top-heading.hideonmobile").get(0);
-    return (node === undefined) ? undefined : lowerUsername(node.firstChild.textContent);
+    return (node === undefined) ? null : lowerUsername(node.firstChild.textContent);
 }
-async function getUserWatchList(username) {
+async function retrieveUserWatchList(username) {
     const data = await $.get(`/watchlist/to/${username}/`);
     let items = $(data).find(".watch-list-items>a");
     let usernames = new Array(items.length);
     for (let i = 0; i < items.length; i++) {
         usernames[i] = lowerUsername(items.get(i).textContent);
     }
+    await GM_setValue('timeLastUpdated', Date.now());
+    await GM_setValue('usernames', usernames.join(','));
+    console.log("Updated locally-saved user watchlist");
+    return usernames;
+}
+async function getUserWatchList(username) {
+    let usernames;
+    if (await shouldUpdate()) {
+        usernames = await retrieveUserWatchList(username);
+    }
+    else {
+        let usernames_str = await GM_getValue('usernames', "");
+        if (usernames_str.length == 0) {
+            usernames = await retrieveUserWatchList(username);
+        }
+        else {
+            usernames = usernames_str.split(',');
+        }
+    }
     return usernames;
 }
 // Main Procedure
-$(function () {
-    const USERNAME = getUsername();
+const USERNAME = getUsername();
+if (USERNAME != null) {
     console.log(`Setting user: '${USERNAME}'`);
-    getUserWatchList(USERNAME).then(function (following_users) {
+    getUserWatchList(USERNAME).then((following_users) => {
         function isWatcher(username) {
             return $.inArray(username, following_users) !== -1;
         }
@@ -79,4 +109,4 @@ $(function () {
             }
         });
     });
-});
+}
