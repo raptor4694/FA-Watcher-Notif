@@ -101,7 +101,7 @@ async function retrieveUserWatchList(username) {
     } while (moreUsernames.length !== 0);
     await GM_setValue('timeLastUpdated', Date.now());
     await GM_setValue('usernames', usernames.join(','));
-    console.log `Updated locally-saved user watchlist (${usernames.length} entries)`;
+    console.log(`Updated locally-saved user watchlist (${usernames.length} entries)`);
     return usernames;
 }
 /**
@@ -143,6 +143,7 @@ if (USERNAME == null) {
 }
 else if (isClassic) {
     getUserWatchList(USERNAME).then((following_users) => {
+        console.log(`There are ${following_users.length} users watching ${USERNAME}`);
         function isWatcher(username) {
             return $.inArray(username, following_users) !== -1;
         }
@@ -226,18 +227,19 @@ else if (isClassic) {
             });
     });
 }
-else {
+else /* modern theme */ {
     getUserWatchList(USERNAME).then((following_users) => {
+        console.log(`There are ${following_users.length} users watching ${USERNAME}`);
         function isWatcher(username) {
             return $.inArray(username, following_users) !== -1;
         }
-        // comments
-        if (!(isUserpage || isNote))
+        // comments/shouts
+        if (!isNote)
             $(`.comment_container`).each(function () {
                 const username = getUsernameFromHref($(this).find(`.comment_anchor~div>a[href^="/user/"]`).get(0));
                 console.log(`Comment poster: '${username}'`);
                 if (isWatcher(username)) {
-                    $(this).find(`.cell>a.inline+span`).after(WATCHER_HTML_MODERN);
+                    $(this).find(isUserpage ? `.comment_username` : `.cell>a.inline+span`).after(WATCHER_HTML_MODERN);
                     console.log(`=> watches you`);
                 }
                 else {

@@ -156,6 +156,7 @@ if (USERNAME == null) {
     console.log(`Couldn't retrieve username!`)
 } else if (isClassic) {
     getUserWatchList(USERNAME).then((following_users) => {
+        console.log(`There are ${following_users.length} users watching ${USERNAME}`)
 
         function isWatcher(username: string): boolean {
             return $.inArray(username, following_users) !== -1
@@ -242,18 +243,19 @@ if (USERNAME == null) {
     })
 } else /* modern theme */ {
     getUserWatchList(USERNAME).then((following_users) => {
-        
+        console.log(`There are ${following_users.length} users watching ${USERNAME}`)
+
         function isWatcher(username: string): boolean {
             return $.inArray(username, following_users) !== -1
         }
 
-        // comments
-        if (!(isUserpage || isNote))
+        // comments/shouts
+        if (!isNote)
         $(`.comment_container`).each(function() {
             const username = getUsernameFromHref($(this).find(`.comment_anchor~div>a[href^="/user/"]`).get(0))
             console.log(`Comment poster: '${username}'`)
             if (isWatcher(username)) {
-                $(this).find(`.cell>a.inline+span`).after(WATCHER_HTML_MODERN)
+                $(this).find(isUserpage? `.comment_username` : `.cell>a.inline+span`).after(WATCHER_HTML_MODERN)
                 console.log(`=> watches you`)
             } else {
                 console.log(`=> does not watch you`)
