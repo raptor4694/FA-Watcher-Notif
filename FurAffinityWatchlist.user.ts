@@ -31,26 +31,20 @@ const MINUTES_BETWEEN_UPDATE = 5
 const MILLISECONDS_PER_MINUTE = 1000*60
 
 /**
- * @param username The input username, may be a display name
- * @returns The username, turned into a FA 'lower' username as seen in the profile URL.
- */
-function lowerUsername(username: string): string {
-    return username.trim().toLowerCase().replace(/(_|[^-a-zA-Z0-9])+/, "")
-}
-
-/**
  * @param username The username
  * @returns Whether it has been more than MINUTES_BETWEEN_UPDATE minutes since we last retrieved
  *          the user's watchlist from the site and saved it into local storage.
  */
 async function shouldUpdate(username: string): Promise<boolean> {
     if (username != await GM_getValue('username', "")) {
+        console.log(`Setting user for the first time!`)
         setUser(username)
         return true
     }
     const now = new Date
     const then = new Date(await GM_getValue('timeLastUpdated', now.getTime()))
-    const minuteDiff = Math.floor((then.getTime() - now.getTime()) / MILLISECONDS_PER_MINUTE)
+    const minuteDiff = (now.getTime() - then.getTime()) / MILLISECONDS_PER_MINUTE
+    console.log(`Last updated: ${then} (${minuteDiff} minutes ago)`)
     return minuteDiff > MINUTES_BETWEEN_UPDATE
 }
 
@@ -68,8 +62,8 @@ function getUsernameFromRelativeLink(link: string): string {
  * Extracts a username from an HTMLElement's 'href' attribute
  * @param element The element
  */
-function getUsernameFromHref(element: HTMLElement): string {
-    let href = element.getAttribute('href')
+function getUsernameFromHref(element: HTMLElement | null): string|null {
+    let href = element?.getAttribute('href')
     if (href == null) return null
     return getUsernameFromRelativeLink(href)
 }
@@ -78,16 +72,7 @@ function getUsernameFromHref(element: HTMLElement): string {
  * @returns The currently logged in user's username or null.
  */
 function getUsername(): string {
-    let username: string;
-    if (isClassic) {
-        let node = $(`a#my-username[href^="/user/"]`).get(0)
-        if (node == null) return null
-        username = getUsernameFromRelativeLink(node.getAttribute('href'))
-    } else {
-        let node = $(`a#my-username.top-heading.hideonmobile`).get(0)
-        if (node == null) return null
-        username = lowerUsername(node.firstChild.textContent)
-    }
+    let username = getUsernameFromHref($(`a#my-username[href^="/user/"]`).get(0))
     if (username) setUser(username)
     return username
 }
@@ -106,15 +91,28 @@ function setUser(username: string): Promise<string> {
  * @param username The username to retrieve the watchlist of
  */
 async function retrieveUserWatchList(username: string): Promise<string[]> {
-    const data = await $.get(`/watchlist/to/${username}/`)
-    let items = $(data).find(".watch-list-items>a")
-    let usernames: string[] = new Array<string>(items.length)
-    for (let i = 0; i < items.length; i++) {
-        usernames[i] = lowerUsername(items.get(i).textContent)
+    async function actuallyRetrieveWatchlist(url: string): Promise<string[]> {
+        const data = await $.get(url)
+        let items = $(data).find(`a[href^="/user/"]`)
+        let usernames: string[] = new Array<string>(items.length)
+        for (let i = 0; i < items.length; i++) {
+            usernames[i] = getUsernameFromHref(items.get(i))
+        }
+        return usernames    
     }
+    
+    let usernames = await actuallyRetrieveWatchlist(`/watchlist/to/${username}/`)
+    
+    let i = 2
+    do {
+        var moreUsernames = await actuallyRetrieveWatchlist(`/watchlist/to/${username}/${i}/`)
+        usernames.push(...moreUsernames)
+        i++
+    } while (moreUsernames.length !== 0)
+
     await GM_setValue('timeLastUpdated', Date.now())
     await GM_setValue('usernames', usernames.join(','))
-    console.log(`Updated locally-saved user watchlist`)
+    console.log(`Updated locally-saved user watchlist (${usernames.length} entries)`)
     return usernames
 }
 
@@ -242,7 +240,7 @@ if (USERNAME == null) {
         })
 
     })
-} else {
+} else /* modern theme */ {
     getUserWatchList(USERNAME).then((following_users) => {
         
         function isWatcher(username: string): boolean {

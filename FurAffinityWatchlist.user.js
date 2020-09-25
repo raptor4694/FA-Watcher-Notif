@@ -25,25 +25,20 @@ const MINUTES_BETWEEN_UPDATE = 5;
 /* DO NOT MODIFY THESE CONSTANTS */
 const MILLISECONDS_PER_MINUTE = 1000 * 60;
 /**
- * @param username The input username, may be a display name
- * @returns The username, turned into a FA 'lower' username as seen in the profile URL.
- */
-function lowerUsername(username) {
-    return username.trim().toLowerCase().replace(/(_|[^-a-zA-Z0-9])+/, "");
-}
-/**
  * @param username The username
  * @returns Whether it has been more than MINUTES_BETWEEN_UPDATE minutes since we last retrieved
  *          the user's watchlist from the site and saved it into local storage.
  */
 async function shouldUpdate(username) {
     if (username != await GM_getValue('username', "")) {
+        console.log(`Setting user for the first time!`);
         setUser(username);
         return true;
     }
     const now = new Date;
     const then = new Date(await GM_getValue('timeLastUpdated', now.getTime()));
-    const minuteDiff = Math.floor((then.getTime() - now.getTime()) / MILLISECONDS_PER_MINUTE);
+    const minuteDiff = (now.getTime() - then.getTime()) / MILLISECONDS_PER_MINUTE;
+    console.log(`Last updated: ${then} (${minuteDiff} minutes ago)`);
     return minuteDiff > MINUTES_BETWEEN_UPDATE;
 }
 /**
@@ -61,7 +56,7 @@ function getUsernameFromRelativeLink(link) {
  * @param element The element
  */
 function getUsernameFromHref(element) {
-    let href = element.getAttribute('href');
+    let href = element?.getAttribute('href');
     if (href == null)
         return null;
     return getUsernameFromRelativeLink(href);
@@ -70,19 +65,7 @@ function getUsernameFromHref(element) {
  * @returns The currently logged in user's username or null.
  */
 function getUsername() {
-    let username;
-    if (isClassic) {
-        let node = $(`a#my-username[href^="/user/"]`).get(0);
-        if (node == null)
-            return null;
-        username = getUsernameFromRelativeLink(node.getAttribute('href'));
-    }
-    else {
-        let node = $(`a#my-username.top-heading.hideonmobile`).get(0);
-        if (node == null)
-            return null;
-        username = lowerUsername(node.firstChild.textContent);
-    }
+    let username = getUsernameFromHref($(`a#my-username[href^="/user/"]`).get(0));
     if (username)
         setUser(username);
     return username;
@@ -100,15 +83,25 @@ function setUser(username) {
  * @param username The username to retrieve the watchlist of
  */
 async function retrieveUserWatchList(username) {
-    const data = await $.get(`/watchlist/to/${username}/`);
-    let items = $(data).find(".watch-list-items>a");
-    let usernames = new Array(items.length);
-    for (let i = 0; i < items.length; i++) {
-        usernames[i] = lowerUsername(items.get(i).textContent);
+    async function actuallyRetrieveWatchlist(url) {
+        const data = await $.get(url);
+        let items = $(data).find(`a[href^="/user/"]`);
+        let usernames = new Array(items.length);
+        for (let i = 0; i < items.length; i++) {
+            usernames[i] = getUsernameFromHref(items.get(i));
+        }
+        return usernames;
     }
+    let usernames = await actuallyRetrieveWatchlist(`/watchlist/to/${username}/`);
+    let i = 2;
+    do {
+        var moreUsernames = await actuallyRetrieveWatchlist(`/watchlist/to/${username}/${i}/`);
+        usernames.push(...moreUsernames);
+        i++;
+    } while (moreUsernames.length !== 0);
     await GM_setValue('timeLastUpdated', Date.now());
     await GM_setValue('usernames', usernames.join(','));
-    console.log(`Updated locally-saved user watchlist`);
+    console.log `Updated locally-saved user watchlist (${usernames.length} entries)`;
     return usernames;
 }
 /**
